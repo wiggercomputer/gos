@@ -1,0 +1,31 @@
+{
+  "name": "gos",
+  "version": "1.0.0",
+  "description": "A CLI tool to crawl GitHub repositories and pull all names and email addresses from commit histories.",
+  "main": "index.mjs",
+  "type": "module",
+  "bin": {
+    "gos": "index.mjs"
+  },
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "keywords": [
+    "osint",
+    "github",
+    "cli",
+    "email",
+    "crawler",
+    "commits"
+  ],
+  "author": "wiggercomputer",
+  "license": "MIT",
+  "dependencies": {
+    "@octokit/rest": "^19.0.13",
+    "arg": "^5.0.0",
+    "axios": "^1.7.2",
+    "chalk": "^5.2.0",
+    "cli-progress": "^3.9.1",
+    "octokit": "^4.0.2"
+  }
+}
