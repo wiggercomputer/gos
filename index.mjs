@@ -63,7 +63,7 @@ function parseArgumentsIntoOptions(rawArgs) {
       showDetails: args['--details'] || false,
     };
   } catch (err) {
-    console.log('Usage: github-email-crawler <username> [--details]');
+    console.log('Usage: gos <username> [--details]');
     process.exit(1);
   }
 }
