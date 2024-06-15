@@ -101,6 +101,7 @@ async function fetchCommits(octokit, owner, repo, forkCreationDate = null) {
     return commits.data;
   } catch (error) {
     console.error(chalk.red(`Error fetching commits for repo ${repo}:\n${error.message}`));
+    return [];
   }
 }
 
