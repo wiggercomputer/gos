@@ -1,6 +1,6 @@
 {
   "name": "git-oh-shit",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A CLI tool to crawl GitHub repositories and pull all names and email addresses from commit histories.",
   "main": "index.mjs",
   "type": "module",
