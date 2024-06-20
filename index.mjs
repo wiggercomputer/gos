@@ -49,16 +49,19 @@ function parseArgumentsIntoOptions(rawArgs) {
         const args = arg(
             {
                 '--details': Boolean,
-                '-d': '--details'
+                '-d': '--details',
+                '--secrets': Boolean,
+                '-s': '--secrets'
             },
             { argv: rawArgs.slice(2) }
         );
         return {
             username: args._[0],
             showDetails: args['--details'] || false,
+            checkSecrets: args['--secrets'] || false,
         };
     } catch (err) {
-        console.log('Usage: gos <username> [--details]');
+        console.log('Usage: gos <username> [--details] [--secrets]');
         process.exit(1);
     }
 }
@@ -98,23 +101,74 @@ async function fetchCommits(octokit, owner, repo, forkCreationDate = null) {
     }
 }
 
-function displayResults(sortedEmails, showDetails) {
-    console.log(chalk.yellow('\nCollected email addresses:'));
-    sortedEmails.forEach(([email, details]) => {
-        console.log(email);
-        if (showDetails) {
-            details.repos.forEach((commits, repoName) => {
-                console.log(chalk.green(`  Repo: ${repoName}`));
-                commits.forEach(commit => {
-                    console.log(chalk.magenta(`    Commit: ${commit.commitHash}`));
-                    console.log(chalk.blue(`    URL: ${commit.commitUrl}`));
-                    console.log(chalk.white(`    Author: ${commit.authorName}`));
-                });
-            });
-        } else {
-            console.log(chalk.white(`  Names: ${Array.from(details.names).join(', ')}`));
+const secretPatterns = [
+    /AKIA[0-9A-Z]{16}/,            // AWS Access Key ID
+    /[A-Za-z0-9+/]{40}/,           // AWS Secret Access Key (simplified)
+    /[0-9a-fA-F]{32}/,             // Generic API Key (simplified)
+    /"password":\s*".*?"/i,        // Passwords in JSON
+    /"secret":\s*".*?"/i,          // Secrets in JSON
+    /-----BEGIN PRIVATE KEY-----/, // Private Key
+    /-----BEGIN CERTIFICATE-----/, // Certificate
+    /[a-zA-Z0-9_.+/~$-]([a-zA-Z0-9_.+/=~$-]|\\\\(?![ntr\"])){14,1022}[a-zA-Z0-9_.+/=~$-]/, // High Entropy Strings
+];
+
+function checkForSecrets(text) {
+    const secrets = [];
+    text.split('\n').forEach(line => {
+        for (const pattern of secretPatterns) {
+            if (pattern.test(line)) {
+                secrets.push(line);
+                break;
+            }
         }
     });
+    // Remove duplicates
+    return [...new Set(secrets)];
+}
+
+function displayResults(sortedEmails, showDetails, checkSecrets) {
+    if (!checkSecrets) {
+        console.log(chalk.yellow('\nCollected email addresses:'));
+        sortedEmails.forEach(([email, details]) => {
+            console.log(email);
+            if (showDetails) {
+                details.repos.forEach((commits, repoName) => {
+                    console.log(chalk.green(`  Repo: ${repoName}`));
+                    commits.forEach(commit => {
+                        console.log(chalk.magenta(`    Commit: ${commit.commitHash}`));
+                        console.log(chalk.blue(`    URL: ${commit.commitUrl}`));
+                        console.log(chalk.white(`    Author: ${commit.authorName}`));
+                        if (commit.secrets && commit.secrets.length > 0) {
+                            console.log(chalk.red(`    Potential Secrets:`) + `${commit.secrets.join('\n    ')}`);
+                        }
+                    });
+                });
+            } else {
+                console.log(chalk.white(`  Names: ${Array.from(details.names).join(', ')}`));
+            }
+        });
+    } else {
+        // Display all secrets found
+        const allSecrets = [];
+        sortedEmails.forEach(([_, details]) => {
+            details.repos.forEach((commits) => {
+                commits.forEach(commit => {
+                    if (commit.secrets && commit.secrets.length > 0) {
+                        allSecrets.push(...commit.secrets);
+                    }
+                });
+            });
+        });
+
+        if (allSecrets.length > 0) {
+            console.log(chalk.red('\nFound Potential Secrets:'));
+            allSecrets.forEach(secret => {
+                console.log(secret);
+            });
+        } else {
+            console.log(chalk.green('\nNo exposed secrets found.'));
+        }
+    }
 }
 
 (async function () {
@@ -146,6 +200,18 @@ function displayResults(sortedEmails, showDetails) {
             if (commit.commit.author.email) {
                 const email = commit.commit.author.email;
                 const name = commit.commit.author.name || 'N/A';
+                const commitMessage = commit.commit.message;
+
+                const commitDetails = await octokit.repos.getCommit({
+                    owner: repo.owner.login,
+                    repo: repo.name,
+                    ref: commit.sha
+                });
+
+                const commitContent = commitDetails.data.files.map(file => file.patch || '').join('\n');
+                const secrets = options.checkSecrets
+                    ? [...checkForSecrets(commitMessage), ...checkForSecrets(commitContent)]
+                    : [];
 
                 if (!emails.has(email)) {
                     emails.set(email, { names: new Set(), repos: new Map(), commitCount: 0 });
@@ -162,7 +228,8 @@ function displayResults(sortedEmails, showDetails) {
                 emailDetails.repos.get(repo.name).push({
                     commitHash: commit.sha,
                     commitUrl: commit.html_url,
-                    authorName: name
+                    authorName: name,
+                    secrets
                 });
             }
         }
@@ -174,6 +241,6 @@ function displayResults(sortedEmails, showDetails) {
 
     const sortedEmails = Array.from(emails.entries()).sort((a, b) => b[1].commitCount - a[1].commitCount);
 
-    displayResults(sortedEmails, options.showDetails);
+    displayResults(sortedEmails, options.showDetails, options.checkSecrets);
 })();
 
